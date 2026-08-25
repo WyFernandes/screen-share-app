@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transmitindo Tela</title>
+<style>
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 1.5rem;
+  }
+  .top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .badge {
+    background: #1e293b;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+  }
+  .link-box {
+    background: #1e293b;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex: 1;
+    min-width: 260px;
+  }
+  .link-box input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #f1f5f9;
+    font-size: 0.9rem;
+  }
+  button {
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #6366f1;
+    color: white;
+  }
+  button:hover { opacity: 0.85; }
+  #startBtn { background: #16a34a; }
+  #stopBtn { background: #dc2626; }
+  video {
+    width: 100%;
+    max-height: 70vh;
+    background: black;
+    border-radius: 12px;
+    margin-top: 1rem;
+  }
+  .status { color: #94a3b8; font-size: 0.85rem; margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+  <div class="top">
+    <div class="badge">Sala: <strong id="roomLabel"></strong></div>
+    <div class="link-box">
+      <input id="shareLink" readonly />
+      <button onclick="copyLink()">Copiar link</button>
+    </div>
+    <div>
+      <button id="startBtn" onclick="startShare()">Iniciar transmissão</button>
+      <button id="stopBtn" onclick="stopShare()" style="display:none">Parar</button>
+    </div>
+  </div>
+
+  <video id="preview" autoplay muted playsinline></video>
+  <p class="status" id="status">Clique em "Iniciar transmissão" e escolha a tela/janela que deseja compartilhar.</p>
+  <p class="status" id="viewerCount">Espectadores conectados: 0</p>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const room = params.get('room') || 'sala-padrao';
+document.getElementById('roomLabel').textContent = room;
+
+const viewerUrl = `${window.location.origin}/viewer.html?room=${encodeURIComponent(room)}`;
+document.getElementById('shareLink').value = viewerUrl;
+
+function copyLink() {
+  navigator.clipboard.writeText(viewerUrl);
+  const s = document.getElementById('status');
+  s.textContent = 'Link copiado! Envie para quem for assistir.';
+}
+
+const socket = io();
+const peers = {}; // watcherId -> RTCPeerConnection
+let localStream = null;
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
+
+function updateViewerCount() {
+  document.getElementById('viewerCount').textContent =
+    `Espectadores conectados: ${Object.keys(peers).length}`;
+}
+
+async function startShare() {
+  try {
+    localStream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 30 },
+      audio: true
+    });
+  } catch (err) {
+    document.getElementById('status').textContent =
+      'Não foi possível capturar a tela: ' + err.message;
+    return;
+  }
+
+  document.getElementById('preview').srcObject = localStream;
+  document.getElementById('startBtn').style.display = 'none';
+  document.getElementById('stopBtn').style.display = 'inline-block';
+  document.getElementById('status').textContent = 'Transmitindo... compartilhe o link com os espectadores.';
+
+  // se o usuário parar de compartilhar pelo próprio navegador
+  localStream.getVideoTracks()[0].addEventListener('ended', stopShare);
+
+  socket.emit('broadcaster', room);
+}
+
+function stopShare() {
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  Object.values(peers).forEach(pc => pc.close());
+  for (const id in peers) delete peers[id];
+  document.getElementById('preview').srcObject = null;
+  document.getElementById('startBtn').style.display = 'inline-block';
+  document.getElementById('stopBtn').style.display = 'none';
+  document.getElementById('status').textContent = 'Transmissão parada.';
+  updateViewerCount();
+}
+
+// Um novo espectador chegou
+socket.on('watcher', async (watcherId) => {
+  if (!localStream) return; // ainda não começou a transmitir
+
+  const pc = new RTCPeerConnection(rtcConfig);
+  peers[watcherId] = pc;
+  updateViewerCount();
+
+  localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('candidate', watcherId, event.candidate);
+    }
+  };
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  socket.emit('offer', watcherId, offer);
+});
+
+socket.on('answer', async (watcherId, answer) => {
+  const pc = peers[watcherId];
+  if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+});
+
+socket.on('candidate', async (watcherId, candidate) => {
+  const pc = peers[watcherId];
+  if (pc) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
+  }
+});
+
+socket.on('disconnectPeer', (watcherId) => {
+  const pc = peers[watcherId];
+  if (pc) {
+    pc.close();
+    delete peers[watcherId];
+    updateViewerCount();
+  }
+});
+</script>
+</body>
+</html>

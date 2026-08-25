@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Assistindo Transmissão</title>
+<style>
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .badge {
+    background: #1e293b;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+  video {
+    width: 100%;
+    max-width: 1100px;
+    max-height: 80vh;
+    background: black;
+    border-radius: 12px;
+  }
+  .status {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <div class="badge">Sala: <strong id="roomLabel"></strong></div>
+  <video id="remoteVideo" autoplay playsinline controls></video>
+  <p class="status" id="status">Conectando à transmissão...</p>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const room = params.get('room') || 'sala-padrao';
+document.getElementById('roomLabel').textContent = room;
+
+const socket = io();
+let pc = null;
+
+const rtcConfig = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ]
+};
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+socket.emit('watcher', room);
+
+socket.on('no-broadcaster', () => {
+  setStatus('Nenhuma transmissão ativa nesta sala ainda. Aguardando o transmissor iniciar...');
+});
+
+socket.on('offer', async (broadcasterId, offer) => {
+  pc = new RTCPeerConnection(rtcConfig);
+
+  pc.ontrack = (event) => {
+    document.getElementById('remoteVideo').srcObject = event.streams[0];
+    setStatus('Conectado! Assistindo em tempo real.');
+  };
+
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('candidate', broadcasterId, event.candidate);
+    }
+  };
+
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('answer', broadcasterId, answer);
+});
+
+socket.on('candidate', async (broadcasterId, candidate) => {
+  if (pc) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
+  }
+});
+
+socket.on('broadcaster-disconnect', () => {
+  setStatus('O transmissor encerrou a transmissão.');
+  if (pc) { pc.close(); pc = null; }
+  document.getElementById('remoteVideo').srcObject = null;
+});
+</script>
+</body>
+</html>
