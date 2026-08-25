@@ -1,163 +1,857 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
+
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
 <title>Assistindo Transmissão</title>
+
 <style>
-  body {
-    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #0f172a;
-    color: #f1f5f9;
-    margin: 0;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
-  .badge {
-    background: #1e293b;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.9rem;
-    margin-bottom: 1rem;
-  }
-  video {
-    width: 100%;
-    max-width: 1100px;
-    max-height: 80vh;
-    background: black;
-    border-radius: 12px;
-  }
-  .status {
-    color: #94a3b8;
-    font-size: 0.9rem;
-    margin-top: 1rem;
-    text-align: center;
-  }
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    sans-serif;
+
+  background: #0f172a;
+  color: #f1f5f9;
+
+  margin: 0;
+  padding: 1.5rem;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.badge {
+  background: #1e293b;
+
+  padding: 0.5rem 1rem;
+
+  border-radius: 8px;
+
+  font-size: 0.9rem;
+
+  margin-bottom: 1rem;
+}
+
+video {
+  width: 100%;
+
+  max-width: 1100px;
+
+  max-height: 80vh;
+
+  background: black;
+
+  border-radius: 12px;
+}
+
+.status {
+  color: #94a3b8;
+
+  font-size: 0.9rem;
+
+  margin-top: 1rem;
+
+  text-align: center;
+}
+
+button {
+  margin-top: 0.75rem;
+
+  padding: 0.6rem 1.2rem;
+
+  border: none;
+
+  border-radius: 8px;
+
+  background: #6366f1;
+
+  color: white;
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
 </style>
+
 </head>
+
+
 <body>
-  <div class="badge">Sala: <strong id="roomLabel"></strong></div>
-  <video id="remoteVideo" autoplay playsinline controls muted></video>
-  <button id="unmuteBtn" style="display:none; margin-top:0.75rem; padding:0.6rem 1.2rem; border:none; border-radius:8px; background:#6366f1; color:white; font-weight:600; cursor:pointer;">🔊 Ativar som</button>
-  <p class="status" id="status">Conectando à transmissão...</p>
+
+<div class="badge">
+
+  Sala:
+  <strong id="roomLabel"></strong>
+
+</div>
+
+
+<video
+  id="remoteVideo"
+  autoplay
+  playsinline
+  controls
+  muted
+></video>
+
+
+<button
+  id="unmuteBtn"
+  style="display:none"
+>
+  🔊 Ativar som
+</button>
+
+
+<p
+  class="status"
+  id="status"
+>
+  Conectando ao servidor...
+</p>
+
 
 <script src="/socket.io/socket.io.js"></script>
-<script>
-const params = new URLSearchParams(window.location.search);
-const room = params.get('room') || 'sala-padrao';
-document.getElementById('roomLabel').textContent = room;
 
-const socket = io();
+
+<script>
+
+const params =
+  new URLSearchParams(window.location.search);
+
+
+const room =
+  params.get('room') || 'sala-padrao';
+
+
+document
+  .getElementById('roomLabel')
+  .textContent = room;
+
+
+/*
+SOCKET
+*/
+
+const socket = io({
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000
+});
+
+
 let pc = null;
 
-// TROQUE pela sua URL de credenciais do Metered.ca, ex:
-// 'https://SEUAPP.metered.live/api/v1/turn/credentials?apiKey=SUACHAVE'
-const TURN_CREDENTIALS_URL = 'https://makai.metered.live/api/v1/turn/credentials?apiKey=wj_xVbuLy3VjKmN286dlmQN4txNPSrI-X33-rXLj3Lukn5dY';
-
-async function getIceServers() {
-  const fallback = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
-  ];
-  if (!TURN_CREDENTIALS_URL || TURN_CREDENTIALS_URL === 'COLE_AQUI_SUA_URL_DO_METERED') {
-    return fallback;
-  }
-  try {
-    const res = await fetch(TURN_CREDENTIALS_URL);
-    const iceServers = await res.json();
-    return iceServers;
-  } catch (err) {
-    console.warn('Não foi possível buscar credenciais TURN, usando apenas STUN:', err);
-    return fallback;
-  }
-}
+let broadcasterId = null;
 
 let iceServersCache = null;
-getIceServers().then((servers) => { iceServersCache = servers; });
 
-function setStatus(msg) {
-  document.getElementById('status').textContent = msg;
+let pendingCandidates = [];
+
+
+/*
+STATUS
+*/
+
+function setStatus(message) {
+
+  document
+    .getElementById('status')
+    .textContent = message;
+
 }
 
-document.getElementById('unmuteBtn').addEventListener('click', () => {
-  const videoEl = document.getElementById('remoteVideo');
-  videoEl.muted = false;
-  videoEl.play().catch(() => {});
-  document.getElementById('unmuteBtn').style.display = 'none';
+
+/*
+CONECTOU AO SERVIDOR
+*/
+
+socket.on('connect', () => {
+
+  console.log(
+    '[SOCKET] Conectado:',
+    socket.id
+  );
+
+
+  setStatus(
+    'Procurando transmissão...'
+  );
+
+
+  /*
+  Solicita transmissão.
+  */
+
+  socket.emit(
+    'watcher',
+    room
+  );
+
 });
 
-socket.emit('watcher', room);
 
-socket.on('no-broadcaster', () => {
-  setStatus('Nenhuma transmissão ativa nesta sala ainda. Aguardando o transmissor iniciar...');
-  // tenta de novo periodicamente, caso o transmissor comece depois
-  if (!window._watcherRetryInterval) {
-    window._watcherRetryInterval = setInterval(() => {
-      if (!pc) socket.emit('watcher', room);
-    }, 3000);
-  }
+socket.on('disconnect', () => {
+
+  setStatus(
+    'Conexão com o servidor perdida. Reconectando...'
+  );
+
 });
 
-// avisado quando o transmissor inicia a transmissão nesta sala
-socket.on('broadcaster-ready', () => {
-  if (!pc) socket.emit('watcher', room);
+
+socket.on('connect_error', error => {
+
+  console.error(
+    '[SOCKET] Erro:',
+    error
+  );
+
+
+  setStatus(
+    'Não foi possível conectar ao servidor.'
+  );
+
 });
 
-socket.on('offer', async (broadcasterId, offer) => {
-  if (window._watcherRetryInterval) {
-    clearInterval(window._watcherRetryInterval);
-    window._watcherRetryInterval = null;
-  }
-  if (!iceServersCache) {
-    iceServersCache = await getIceServers();
-  }
-  pc = new RTCPeerConnection({ iceServers: iceServersCache });
 
-  pc.ontrack = (event) => {
-    const videoEl = document.getElementById('remoteVideo');
-    videoEl.srcObject = event.streams[0];
-    videoEl.play().catch((err) => {
-      console.warn('Autoplay bloqueado, aguardando interação do usuário:', err);
-    });
-    setStatus('Conectado! Assistindo em tempo real (som desligado).');
-    document.getElementById('unmuteBtn').style.display = 'inline-block';
-  };
+/*
+TURN
+*/
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit('candidate', broadcasterId, event.candidate);
+async function getIceServers() {
+
+  const fallback = [
+    {
+      urls:
+        'stun:stun.l.google.com:19302'
+    },
+    {
+      urls:
+        'stun:stun1.l.google.com:19302'
     }
-  };
+  ];
 
-  pc.oniceconnectionstatechange = () => {
-    if (pc.iceConnectionState === 'checking') {
-      setStatus('Estabelecendo conexão...');
-    } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-      setStatus('Conectado! Assistindo em tempo real (som desligado).');
-    } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-      setStatus('Não foi possível conectar à transmissão. Verifique sua conexão de internet ou tente novamente.');
+
+  try {
+
+    const response =
+      await fetch(
+        '/api/turn-credentials'
+      );
+
+
+    if (!response.ok) {
+
+      throw new Error(
+        `HTTP ${response.status}`
+      );
+
     }
-  };
 
-  await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  socket.emit('answer', broadcasterId, answer);
-});
 
-socket.on('candidate', async (broadcasterId, candidate) => {
+    const servers =
+      await response.json();
+
+
+    console.log(
+      '[ICE] Servidores recebidos:',
+      servers
+    );
+
+
+    return [
+      ...fallback,
+      ...servers
+    ];
+
+  } catch (error) {
+
+    console.warn(
+      '[ICE] TURN indisponível. Usando STUN.',
+      error
+    );
+
+
+    return fallback;
+
+  }
+
+}
+
+
+getIceServers()
+  .then(servers => {
+
+    iceServersCache = servers;
+
+  });
+
+
+/*
+SEM TRANSMISSOR
+*/
+
+let retryInterval = null;
+
+
+socket.on(
+  'no-broadcaster',
+  () => {
+
+    setStatus(
+      'Nenhuma transmissão ativa nesta sala. Aguardando o transmissor...'
+    );
+
+
+    if (!retryInterval) {
+
+      retryInterval =
+        setInterval(
+          () => {
+
+            if (
+              !pc &&
+              socket.connected
+            ) {
+
+              socket.emit(
+                'watcher',
+                room
+              );
+
+            }
+
+          },
+          3000
+        );
+
+    }
+
+  }
+);
+
+
+/*
+TRANSMISSOR ENTROU
+*/
+
+socket.on(
+  'broadcaster-ready',
+  () => {
+
+    console.log(
+      '[BROADCASTER] Disponível.'
+    );
+
+
+    setStatus(
+      'Transmissão encontrada. Conectando...'
+    );
+
+
+    if (
+      !pc &&
+      socket.connected
+    ) {
+
+      socket.emit(
+        'watcher',
+        room
+      );
+
+    }
+
+  }
+);
+
+
+/*
+OFFER
+*/
+
+socket.on(
+  'offer',
+  async (senderId, offer) => {
+
+    console.log(
+      '[WEBRTC] Offer recebida:',
+      senderId
+    );
+
+
+    /*
+    Limpa tentativa anterior.
+    */
+
+    if (pc) {
+
+      pc.close();
+
+      pc = null;
+
+    }
+
+
+    if (retryInterval) {
+
+      clearInterval(
+        retryInterval
+      );
+
+      retryInterval = null;
+
+    }
+
+
+    broadcasterId = senderId;
+
+    pendingCandidates = [];
+
+
+    setStatus(
+      'Estabelecendo conexão...'
+    );
+
+
+    if (!iceServersCache) {
+
+      iceServersCache =
+        await getIceServers();
+
+    }
+
+
+    pc =
+      new RTCPeerConnection({
+        iceServers: iceServersCache
+      });
+
+
+    /*
+    RECEBIMENTO DO VÍDEO
+    */
+
+    pc.ontrack =
+      event => {
+
+        console.log(
+          '[WEBRTC] Stream recebida.'
+        );
+
+
+        const video =
+          document.getElementById(
+            'remoteVideo'
+          );
+
+
+        const stream =
+          event.streams[0];
+
+
+        video.srcObject = stream;
+
+
+        video.play()
+          .catch(error => {
+
+            console.warn(
+              '[VIDEO] Autoplay bloqueado:',
+              error
+            );
+
+          });
+
+
+        setStatus(
+          'Conectado! Assistindo à transmissão.'
+        );
+
+
+        const hasAudio =
+          stream.getAudioTracks().length > 0;
+
+
+        if (hasAudio) {
+
+          document
+            .getElementById('unmuteBtn')
+            .style.display =
+              'inline-block';
+
+        }
+
+      };
+
+
+    /*
+    ENVIO DOS ICE CANDIDATES
+    */
+
+    pc.onicecandidate =
+      event => {
+
+        if (
+          event.candidate &&
+          broadcasterId
+        ) {
+
+          socket.emit(
+            'candidate',
+            broadcasterId,
+            event.candidate
+          );
+
+        }
+
+      };
+
+
+    /*
+    ESTADO WEBRTC
+    */
+
+    pc.onconnectionstatechange =
+      () => {
+
+        console.log(
+          '[WEBRTC] Estado:',
+          pc.connectionState
+        );
+
+
+        switch (
+          pc.connectionState
+        ) {
+
+          case 'connecting':
+
+            setStatus(
+              'Estabelecendo conexão...'
+            );
+
+            break;
+
+
+          case 'connected':
+
+            setStatus(
+              'Conectado! Assistindo à transmissão.'
+            );
+
+            break;
+
+
+          case 'disconnected':
+
+            setStatus(
+              'Conexão interrompida. Tentando recuperar...'
+            );
+
+            break;
+
+
+          case 'failed':
+
+            setStatus(
+              'Falha na conexão WebRTC. Verifique o TURN ou tente novamente.'
+            );
+
+            cleanupPeer();
+
+            break;
+
+
+          case 'closed':
+
+            break;
+
+        }
+
+      };
+
+
+    try {
+
+      /*
+      Define offer do broadcaster.
+      */
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(
+          offer
+        )
+      );
+
+
+      /*
+      Adiciona candidates que chegaram
+      antes da RemoteDescription.
+      */
+
+      for (
+        const candidate
+        of pendingCandidates
+      ) {
+
+        await pc.addIceCandidate(
+          new RTCIceCandidate(
+            candidate
+          )
+        );
+
+      }
+
+
+      pendingCandidates = [];
+
+
+      /*
+      Cria answer.
+      */
+
+      const answer =
+        await pc.createAnswer();
+
+
+      await pc.setLocalDescription(
+        answer
+      );
+
+
+      socket.emit(
+        'answer',
+        broadcasterId,
+        pc.localDescription
+      );
+
+
+      console.log(
+        '[WEBRTC] Answer enviada.'
+      );
+
+
+    } catch (error) {
+
+      console.error(
+        '[WEBRTC] Erro:',
+        error
+      );
+
+
+      setStatus(
+        `Erro ao conectar: ${error.message}`
+      );
+
+      cleanupPeer();
+
+    }
+
+  }
+);
+
+
+/*
+ICE CANDIDATE
+*/
+
+socket.on(
+  'candidate',
+  async (senderId, candidate) => {
+
+    /*
+    Ignora candidate de outro broadcaster.
+    */
+
+    if (
+      broadcasterId &&
+      senderId !== broadcasterId
+    ) {
+
+      return;
+
+    }
+
+
+    /*
+    Se o PeerConnection ainda não existe,
+    guarda o candidate.
+    */
+
+    if (!pc) {
+
+      pendingCandidates.push(
+        candidate
+      );
+
+      return;
+
+    }
+
+
+    /*
+    Se RemoteDescription ainda não foi definida,
+    guarda.
+    */
+
+    if (
+      !pc.remoteDescription
+    ) {
+
+      pendingCandidates.push(
+        candidate
+      );
+
+      return;
+
+    }
+
+
+    try {
+
+      await pc.addIceCandidate(
+        new RTCIceCandidate(
+          candidate
+        )
+      );
+
+    } catch (error) {
+
+      console.warn(
+        '[ICE] Erro:',
+        error
+      );
+
+    }
+
+  }
+);
+
+
+/*
+TRANSMISSOR DESCONECTOU
+*/
+
+socket.on(
+  'broadcaster-disconnect',
+  () => {
+
+    setStatus(
+      'O transmissor encerrou a transmissão.'
+    );
+
+
+    cleanupPeer();
+
+
+    document
+      .getElementById('remoteVideo')
+      .srcObject = null;
+
+
+    document
+      .getElementById('unmuteBtn')
+      .style.display = 'none';
+
+
+    broadcasterId = null;
+
+  }
+);
+
+
+/*
+ATIVAR SOM
+*/
+
+document
+  .getElementById('unmuteBtn')
+  .addEventListener(
+    'click',
+    async () => {
+
+      const video =
+        document.getElementById(
+          'remoteVideo'
+        );
+
+
+      video.muted = false;
+
+
+      try {
+
+        await video.play();
+
+      } catch (error) {
+
+        console.warn(
+          error
+        );
+
+      }
+
+
+      document
+        .getElementById('unmuteBtn')
+        .style.display = 'none';
+
+    }
+  );
+
+
+/*
+LIMPEZA DO PEER
+*/
+
+function cleanupPeer() {
+
   if (pc) {
-    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
-  }
-});
 
-socket.on('broadcaster-disconnect', () => {
-  setStatus('O transmissor encerrou a transmissão.');
-  if (pc) { pc.close(); pc = null; }
-  document.getElementById('remoteVideo').srcObject = null;
-});
+    pc.ontrack = null;
+    pc.onicecandidate = null;
+
+    pc.close();
+
+    pc = null;
+
+  }
+
+}
+
+
+/*
+SAIU DA PÁGINA
+*/
+
+window.addEventListener(
+  'beforeunload',
+  () => {
+
+    cleanupPeer();
+
+  }
+);
+
 </script>
+
 </body>
 </html>
