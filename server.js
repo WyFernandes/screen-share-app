@@ -1,395 +1,316 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const path = require("path");
 
 const app = express();
-
 const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: "*",
+    methods: ["GET", "POST"]
   }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-/*
-rooms = {
-  nomeDaSala: {
-    broadcasterId: 'socket-id',
-    watchers: Set()
-  }
-}
-*/
+app.use(express.static(path.join(__dirname, "public")));
 
 const rooms = new Map();
 
-function getRoom(roomId) {
-  return rooms.get(roomId);
-}
+/*
+  ============================================================
+  METERED TURN
+  ============================================================
 
-function createRoom(roomId) {
-  if (!rooms.has(roomId)) {
-    rooms.set(roomId, {
-      broadcasterId: null,
-      watchers: new Set()
+  No Render:
+
+  METERED_API_KEY = sua nova chave
+
+  Não coloque a chave no HTML.
+*/
+
+const METERED_API_KEY = process.env.METERED_API_KEY;
+const METERED_DOMAIN =
+  process.env.METERED_DOMAIN || "makai.metered.live";
+
+app.get("/api/turn-credentials", async (req, res) => {
+  if (!METERED_API_KEY) {
+    console.error("METERED_API_KEY não configurada.");
+    return res.status(500).json({
+      error: "METERED_API_KEY não configurada no servidor."
     });
   }
 
-  return rooms.get(roomId);
-}
-
-function removeRoomIfEmpty(roomId) {
-  const room = rooms.get(roomId);
-
-  if (!room) return;
-
-  if (
-    !room.broadcasterId &&
-    room.watchers.size === 0
-  ) {
-    rooms.delete(roomId);
-  }
-}
-
-/*
-Endpoint interno para obter as credenciais TURN.
-
-A chave do Metered fica SOMENTE no Render:
-
-METERED_API_KEY=sua_nova_chave
-*/
-
-app.get('/api/turn-credentials', async (req, res) => {
   try {
-    const apiKey = process.env.METERED_API_KEY;
-
-    if (!apiKey) {
-      console.error(
-        '[TURN] METERED_API_KEY não configurada'
-      );
-
-      return res.status(500).json({
-        error: 'Servidor TURN não configurado'
-      });
-    }
-
     const url =
-      `https://makai.metered.live/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`;
+      `https://${METERED_DOMAIN}/api/v1/turn/credentials` +
+      `?apiKey=${encodeURIComponent(METERED_API_KEY)}`;
+
+    console.log("Solicitando credenciais TURN ao Metered...");
 
     const response = await fetch(url);
 
     if (!response.ok) {
-      throw new Error(
-        `Metered respondeu HTTP ${response.status}`
+      const text = await response.text();
+
+      console.error(
+        "Metered respondeu com erro:",
+        response.status,
+        text
       );
+
+      return res.status(502).json({
+        error: "Metered recusou a solicitação de credenciais TURN.",
+        status: response.status
+      });
     }
 
-    const iceServers = await response.json();
+    const credentials = await response.json();
 
-    console.log(
-      `[TURN] Credenciais entregues. ${iceServers.length} servidores ICE.`
-    );
+    console.log("Credenciais TURN obtidas com sucesso.");
 
-    res.set('Cache-Control', 'no-store');
-
-    res.json(iceServers);
+    return res.json(credentials);
 
   } catch (error) {
+    console.error("Erro ao obter TURN:", error);
 
-    console.error(
-      '[TURN] Erro ao buscar credenciais:',
-      error.message
-    );
-
-    res.status(500).json({
-      error: 'Não foi possível obter credenciais TURN'
+    return res.status(500).json({
+      error: "Falha ao obter credenciais TURN."
     });
-
   }
 });
 
+/*
+  ============================================================
+  SOCKET.IO
+  ============================================================
+*/
 
-io.on('connection', (socket) => {
+io.on("connection", (socket) => {
 
-  console.log(
-    `[SOCKET] Conectado: ${socket.id}`
-  );
-
+  console.log("Socket conectado:", socket.id);
 
   /*
-  TRANSMISSOR
+    ----------------------------------------------------------
+    BROADCASTER
+    ----------------------------------------------------------
   */
 
-  socket.on('broadcaster', (roomId) => {
+  socket.on("broadcaster", (roomId) => {
 
-    if (!roomId) return;
+    roomId = String(roomId || "").trim();
 
-    const room = createRoom(roomId);
-
-    /*
-    Se houver outro broadcaster na sala,
-    substitui pelo atual.
-    */
-
-    if (
-      room.broadcasterId &&
-      room.broadcasterId !== socket.id
-    ) {
-      console.log(
-        `[ROOM] Broadcaster substituído na sala ${roomId}`
-      );
+    if (!roomId) {
+      return;
     }
 
-    room.broadcasterId = socket.id;
+    /*
+      Se já havia outro broadcaster nessa sala,
+      desconecta a referência antiga.
+    */
+
+    const oldBroadcaster = rooms.get(roomId);
+
+    if (oldBroadcaster && oldBroadcaster !== socket.id) {
+      console.log(
+        `Substituindo broadcaster da sala ${roomId}`
+      );
+
+      io.to(oldBroadcaster).emit("broadcaster-replaced");
+    }
+
+    rooms.set(roomId, socket.id);
 
     socket.join(roomId);
 
     socket.roomId = roomId;
-    socket.role = 'broadcaster';
+    socket.role = "broadcaster";
 
     console.log(
-      `[BROADCASTER] ${socket.id} iniciou na sala ${roomId}`
+      `Broadcaster ${socket.id} transmitindo na sala ${roomId}`
     );
 
     /*
-    Avisa espectadores que já estavam aguardando.
+      Avisa espectadores que já estavam esperando.
     */
 
-    socket.to(roomId).emit(
-      'broadcaster-ready'
-    );
-
-    /*
-    Também notifica o broadcaster sobre
-    watchers que entraram antes dele.
-    */
-
-    for (const watcherId of room.watchers) {
-
-      if (watcherId !== socket.id) {
-
-        io.to(socket.id).emit(
-          'watcher',
-          watcherId
-        );
-
-      }
-
-    }
-
+    socket.to(roomId).emit("broadcaster-ready");
   });
 
 
   /*
-  BROADCASTER PAROU A TRANSMISSÃO
+    ----------------------------------------------------------
+    WATCHER
+    ----------------------------------------------------------
   */
 
-  socket.on('broadcaster-stop', (roomId) => {
+  socket.on("watcher", (roomId) => {
 
-    const room = getRoom(roomId);
+    roomId = String(roomId || "").trim();
 
-    if (!room) return;
-
-    if (room.broadcasterId === socket.id) {
-
-      room.broadcasterId = null;
-
-      console.log(
-        `[BROADCASTER] Parou transmissão na sala ${roomId}`
-      );
-
-      socket.to(roomId).emit(
-        'broadcaster-disconnect'
-      );
-
-      removeRoomIfEmpty(roomId);
-
+    if (!roomId) {
+      return;
     }
-
-  });
-
-
-  /*
-  ESPECTADOR
-  */
-
-  socket.on('watcher', (roomId) => {
-
-    if (!roomId) return;
-
-    const room = createRoom(roomId);
 
     socket.join(roomId);
 
     socket.roomId = roomId;
-    socket.role = 'watcher';
+    socket.role = "watcher";
 
-    room.watchers.add(socket.id);
+    const broadcasterId = rooms.get(roomId);
 
     console.log(
-      `[WATCHER] ${socket.id} entrou na sala ${roomId}`
+      `Watcher ${socket.id} entrou na sala ${roomId}`
     );
-
-    const broadcasterId = room.broadcasterId;
 
     if (!broadcasterId) {
 
       console.log(
-        `[WATCHER] Nenhum transmissor na sala ${roomId}`
+        `Nenhum broadcaster encontrado para ${roomId}`
       );
 
-      socket.emit(
-        'no-broadcaster'
-      );
+      socket.emit("no-broadcaster");
 
       return;
     }
 
     console.log(
-      `[WATCHER] Notificando broadcaster ${broadcasterId}`
+      `Solicitando oferta ao broadcaster ${broadcasterId}`
     );
 
     io.to(broadcasterId).emit(
-      'watcher',
+      "watcher",
+      socket.id
+    );
+  });
+
+
+  /*
+    ----------------------------------------------------------
+    OFFER
+    ----------------------------------------------------------
+  */
+
+  socket.on("offer", (targetId, message) => {
+
+    console.log(
+      `Offer: ${socket.id} -> ${targetId}`
+    );
+
+    io.to(targetId).emit(
+      "offer",
+      socket.id,
+      message
+    );
+  });
+
+
+  /*
+    ----------------------------------------------------------
+    ANSWER
+    ----------------------------------------------------------
+  */
+
+  socket.on("answer", (targetId, message) => {
+
+    console.log(
+      `Answer: ${socket.id} -> ${targetId}`
+    );
+
+    io.to(targetId).emit(
+      "answer",
+      socket.id,
+      message
+    );
+  });
+
+
+  /*
+    ----------------------------------------------------------
+    ICE CANDIDATE
+    ----------------------------------------------------------
+  */
+
+  socket.on("candidate", (targetId, message) => {
+
+    io.to(targetId).emit(
+      "candidate",
+      socket.id,
+      message
+    );
+  });
+
+
+  /*
+    ----------------------------------------------------------
+    DISCONNECT
+    ----------------------------------------------------------
+  */
+
+  socket.on("disconnect", () => {
+
+    console.log(
+      "Socket desconectado:",
       socket.id
     );
 
-  });
-
-
-  /*
-  WEBRTC OFFER
-  */
-
-  socket.on('offer', (targetId, offer) => {
-
-    console.log(
-      `[OFFER] ${socket.id} -> ${targetId}`
-    );
-
-    io.to(targetId).emit(
-      'offer',
-      socket.id,
-      offer
-    );
-
-  });
-
-
-  /*
-  WEBRTC ANSWER
-  */
-
-  socket.on('answer', (targetId, answer) => {
-
-    console.log(
-      `[ANSWER] ${socket.id} -> ${targetId}`
-    );
-
-    io.to(targetId).emit(
-      'answer',
-      socket.id,
-      answer
-    );
-
-  });
-
-
-  /*
-  ICE CANDIDATE
-  */
-
-  socket.on('candidate', (targetId, candidate) => {
-
-    if (!candidate) return;
-
-    io.to(targetId).emit(
-      'candidate',
-      socket.id,
-      candidate
-    );
-
-  });
-
-
-  /*
-  ESPECTADOR DESCONECTOU
-  */
-
-  socket.on('disconnect', () => {
-
-    console.log(
-      `[SOCKET] Desconectado: ${socket.id}`
-    );
+    if (!socket.roomId) {
+      return;
+    }
 
     const roomId = socket.roomId;
 
-    if (!roomId) return;
-
-    const room = getRoom(roomId);
-
-    if (!room) return;
-
-
     /*
-    BROADCASTER DESCONECTOU
+      BROADCASTER
     */
 
-    if (
-      socket.role === 'broadcaster' &&
-      room.broadcasterId === socket.id
-    ) {
+    if (socket.role === "broadcaster") {
 
-      room.broadcasterId = null;
-
-      socket.to(roomId).emit(
-        'broadcaster-disconnect'
-      );
-
-      console.log(
-        `[BROADCASTER] Desconectou da sala ${roomId}`
-      );
-
-    }
-
-
-    /*
-    WATCHER DESCONECTOU
-    */
-
-    if (socket.role === 'watcher') {
-
-      room.watchers.delete(socket.id);
-
-      if (room.broadcasterId) {
-
-        io.to(room.broadcasterId).emit(
-          'disconnectPeer',
-          socket.id
-        );
-
+      if (rooms.get(roomId) === socket.id) {
+        rooms.delete(roomId);
       }
 
-      console.log(
-        `[WATCHER] Saiu da sala ${roomId}`
+      socket.to(roomId).emit(
+        "broadcaster-disconnect"
       );
 
+      console.log(
+        `Broadcaster saiu da sala ${roomId}`
+      );
+
+      return;
     }
 
-    removeRoomIfEmpty(roomId);
 
+    /*
+      WATCHER
+    */
+
+    if (socket.role === "watcher") {
+
+      const broadcasterId = rooms.get(roomId);
+
+      if (broadcasterId) {
+
+        io.to(broadcasterId).emit(
+          "disconnectPeer",
+          socket.id
+        );
+      }
+    }
   });
-
 });
 
 
+/*
+  ============================================================
+  SERVER
+  ============================================================
+*/
+
 const PORT = process.env.PORT || 3000;
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
 
   console.log(
     `Servidor rodando na porta ${PORT}`
