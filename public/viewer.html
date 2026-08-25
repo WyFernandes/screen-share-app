@@ -52,27 +52,30 @@ document.getElementById('roomLabel').textContent = room;
 const socket = io();
 let pc = null;
 
-const rtcConfig = {
-  iceServers: [
+// TROQUE pela sua URL de credenciais do Metered.ca, ex:
+// 'https://SEUAPP.metered.live/api/v1/turn/credentials?apiKey=SUACHAVE'
+const TURN_CREDENTIALS_URL = 'https://makai.metered.live/api/v1/turn/credentials?apiKey=wj_xVbuLy3VjKmN286dlmQN4txNPSrI-X33-rXLj3Lukn5dY';
+
+async function getIceServers() {
+  const fallback = [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    {
-      urls: 'turn:openrelay.metered.ca:80',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    },
-    {
-      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-      username: 'openrelayproject',
-      credential: 'openrelayproject'
-    }
-  ]
-};
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ];
+  if (!TURN_CREDENTIALS_URL || TURN_CREDENTIALS_URL === 'COLE_AQUI_SUA_URL_DO_METERED') {
+    return fallback;
+  }
+  try {
+    const res = await fetch(TURN_CREDENTIALS_URL);
+    const iceServers = await res.json();
+    return iceServers;
+  } catch (err) {
+    console.warn('Não foi possível buscar credenciais TURN, usando apenas STUN:', err);
+    return fallback;
+  }
+}
+
+let iceServersCache = null;
+getIceServers().then((servers) => { iceServersCache = servers; });
 
 function setStatus(msg) {
   document.getElementById('status').textContent = msg;
@@ -107,7 +110,10 @@ socket.on('offer', async (broadcasterId, offer) => {
     clearInterval(window._watcherRetryInterval);
     window._watcherRetryInterval = null;
   }
-  pc = new RTCPeerConnection(rtcConfig);
+  if (!iceServersCache) {
+    iceServersCache = await getIceServers();
+  }
+  pc = new RTCPeerConnection({ iceServers: iceServersCache });
 
   pc.ontrack = (event) => {
     const videoEl = document.getElementById('remoteVideo');
