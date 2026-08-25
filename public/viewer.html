@@ -39,7 +39,8 @@
 </head>
 <body>
   <div class="badge">Sala: <strong id="roomLabel"></strong></div>
-  <video id="remoteVideo" autoplay playsinline controls></video>
+  <video id="remoteVideo" autoplay playsinline controls muted></video>
+  <button id="unmuteBtn" style="display:none; margin-top:0.75rem; padding:0.6rem 1.2rem; border:none; border-radius:8px; background:#6366f1; color:white; font-weight:600; cursor:pointer;">🔊 Ativar som</button>
   <p class="status" id="status">Conectando à transmissão...</p>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -62,6 +63,13 @@ function setStatus(msg) {
   document.getElementById('status').textContent = msg;
 }
 
+document.getElementById('unmuteBtn').addEventListener('click', () => {
+  const videoEl = document.getElementById('remoteVideo');
+  videoEl.muted = false;
+  videoEl.play().catch(() => {});
+  document.getElementById('unmuteBtn').style.display = 'none';
+});
+
 socket.emit('watcher', room);
 
 socket.on('no-broadcaster', () => {
@@ -72,8 +80,13 @@ socket.on('offer', async (broadcasterId, offer) => {
   pc = new RTCPeerConnection(rtcConfig);
 
   pc.ontrack = (event) => {
-    document.getElementById('remoteVideo').srcObject = event.streams[0];
-    setStatus('Conectado! Assistindo em tempo real.');
+    const videoEl = document.getElementById('remoteVideo');
+    videoEl.srcObject = event.streams[0];
+    videoEl.play().catch((err) => {
+      console.warn('Autoplay bloqueado, aguardando interação do usuário:', err);
+    });
+    setStatus('Conectado! Assistindo em tempo real (som desligado).');
+    document.getElementById('unmuteBtn').style.display = 'inline-block';
   };
 
   pc.onicecandidate = (event) => {
