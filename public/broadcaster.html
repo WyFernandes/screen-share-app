@@ -101,6 +101,13 @@ const socket = io();
 const peers = {}; // watcherId -> RTCPeerConnection
 let localStream = null;
 
+// se a conexão com o servidor cair e voltar (ex: servidor reiniciou), re-registra o transmissor
+socket.on('connect', () => {
+  if (localStream) {
+    socket.emit('broadcaster', room);
+  }
+});
+
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
