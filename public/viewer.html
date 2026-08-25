@@ -244,54 +244,36 @@ function setStatus(message) {
 TURN
 ============================================================
 */
-
 async function getIceServers() {
+  try {
+    const response = await fetch('/api/turn-credentials');
 
-  debug(
-    "Buscando credenciais TURN..."
-  );
+    if (!response.ok) {
+      throw new Error(
+        `Servidor TURN respondeu HTTP ${response.status}`
+      );
+    }
 
+    const iceServers = await response.json();
 
-  const response =
-    await fetch(
-      "/api/turn-credentials"
+    console.log('ICE servers recebidos:', iceServers);
+
+    return iceServers;
+
+  } catch (error) {
+
+    console.error(
+      'Erro ao obter servidores TURN:',
+      error
     );
 
-
-  if (!response.ok) {
-
-    throw new Error(
-      `TURN HTTP ${response.status}`
-    );
-
+    // STUN de fallback
+    return [
+      {
+        urls: 'stun:stun.l.google.com:19302'
+      }
+    ];
   }
-
-
-  const servers =
-    await response.json();
-
-
-  debug(
-    "TURN recebido."
-  );
-
-
-  return servers;
-
-}
-
-
-async function initializeIceServers() {
-
-  if (!iceServersCache) {
-
-    iceServersCache =
-      await getIceServers();
-
-  }
-
-  return iceServersCache;
-
 }
 
 
