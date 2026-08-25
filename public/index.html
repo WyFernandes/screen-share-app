@@ -1,84 +1,199 @@
 <!DOCTYPE html>
 <html lang="pt-br">
+
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
 <title>Transmissão de Tela</title>
+
 <style>
-  body {
-    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    background: #0f172a;
-    color: #f1f5f9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    margin: 0;
-  }
-  .card {
-    background: #1e293b;
-    padding: 2.5rem;
-    border-radius: 16px;
-    width: 90%;
-    max-width: 420px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-    text-align: center;
-  }
-  h1 { font-size: 1.4rem; margin-bottom: 1.5rem; }
-  input {
-    width: 100%;
-    padding: 0.75rem;
-    border-radius: 8px;
-    border: 1px solid #334155;
-    background: #0f172a;
-    color: #f1f5f9;
-    margin-bottom: 1rem;
-    box-sizing: border-box;
-    font-size: 1rem;
-  }
-  button {
-    width: 100%;
-    padding: 0.85rem;
-    border: none;
-    border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    margin-bottom: 0.75rem;
-    transition: opacity 0.2s;
-  }
-  button:hover { opacity: 0.85; }
-  .primary { background: #6366f1; color: white; }
-  .secondary { background: #334155; color: #f1f5f9; }
-  .hint { font-size: 0.8rem; color: #94a3b8; margin-top: 1rem; }
+
+body {
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    sans-serif;
+
+  background: #0f172a;
+  color: #f1f5f9;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 100vh;
+
+  margin: 0;
+}
+
+.card {
+  background: #1e293b;
+
+  padding: 2.5rem;
+
+  border-radius: 16px;
+
+  width: 90%;
+  max-width: 420px;
+
+  box-shadow:
+    0 10px 30px
+    rgba(0, 0, 0, 0.4);
+
+  text-align: center;
+}
+
+h1 {
+  font-size: 1.4rem;
+  margin-bottom: 1.5rem;
+}
+
+input {
+  width: 100%;
+
+  padding: 0.75rem;
+
+  border-radius: 8px;
+
+  border: 1px solid #334155;
+
+  background: #0f172a;
+  color: #f1f5f9;
+
+  margin-bottom: 1rem;
+
+  box-sizing: border-box;
+
+  font-size: 1rem;
+}
+
+button {
+  width: 100%;
+
+  padding: 0.85rem;
+
+  border: none;
+
+  border-radius: 8px;
+
+  font-size: 1rem;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  margin-bottom: 0.75rem;
+
+  transition: opacity 0.2s;
+}
+
+button:hover {
+  opacity: 0.85;
+}
+
+.primary {
+  background: #6366f1;
+  color: white;
+}
+
+.secondary {
+  background: #334155;
+  color: #f1f5f9;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  margin-top: 1rem;
+}
+
 </style>
 </head>
+
 <body>
-  <div class="card">
-    <h1>🖥️ Transmissão de Tela</h1>
-    <input id="room" placeholder="Código da sala (ex: reuniao123)" />
-    <button class="primary" onclick="goBroadcast()">Transmitir minha tela</button>
-    <button class="secondary" onclick="goWatch()">Assistir uma transmissão</button>
-    <p class="hint">Crie um código de sala e compartilhe com quem for assistir, ou use o mesmo código para entrar.</p>
-  </div>
+
+<div class="card">
+
+  <h1>🖥️ Transmissão de Tela</h1>
+
+  <input
+    id="room"
+    placeholder="Código da sala (ex: reuniao123)"
+  >
+
+  <button
+    class="primary"
+    onclick="goBroadcast()"
+  >
+    Transmitir minha tela
+  </button>
+
+  <button
+    class="secondary"
+    onclick="goWatch()"
+  >
+    Assistir uma transmissão
+  </button>
+
+  <p class="hint">
+    Crie um código de sala e compartilhe
+    com quem for assistir.
+  </p>
+
+</div>
+
 
 <script>
+
 function getRoom() {
-  const el = document.getElementById('room');
-  let room = el.value.trim();
+
+  const el =
+    document.getElementById('room');
+
+  let room =
+    el.value.trim();
+
   if (!room) {
-    room = Math.random().toString(36).substring(2, 8);
+
+    room =
+      Math.random()
+        .toString(36)
+        .substring(2, 8);
+
   }
+
   return room;
+
 }
+
+
 function goBroadcast() {
+
   const room = getRoom();
-  window.location.href = `/broadcaster.html?room=${encodeURIComponent(room)}`;
+
+  window.location.href =
+    `broadcaster.html?room=${encodeURIComponent(room)}`;
+
 }
+
+
 function goWatch() {
+
   const room = getRoom();
-  window.location.href = `/viewer.html?room=${encodeURIComponent(room)}`;
+
+  window.location.href =
+    `viewer.html?room=${encodeURIComponent(room)}`;
+
 }
+
 </script>
+
 </body>
 </html>
