@@ -1,105 +1,61 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0"
->
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>Transmitindo Tela</title>
 
 <style>
-
 body {
-  font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    Arial,
-    sans-serif;
-
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
   background: #0f172a;
   color: #f1f5f9;
-
   margin: 0;
   padding: 1.5rem;
 }
 
 .top {
   display: flex;
-
   justify-content: space-between;
   align-items: center;
-
   margin-bottom: 1rem;
-
   flex-wrap: wrap;
   gap: 0.75rem;
 }
 
 .badge {
   background: #1e293b;
-
   padding: 0.5rem 1rem;
-
   border-radius: 8px;
-
-  font-size: 0.9rem;
 }
 
 .link-box {
   background: #1e293b;
-
   padding: 0.75rem 1rem;
-
   border-radius: 8px;
-
   display: flex;
-
   gap: 0.5rem;
-
   align-items: center;
-
   flex: 1;
-
   min-width: 260px;
 }
 
 .link-box input {
   flex: 1;
-
   background: transparent;
-
   border: none;
-
   color: #f1f5f9;
-
-  font-size: 0.9rem;
 }
 
 button {
   padding: 0.6rem 1rem;
-
   border: none;
-
   border-radius: 8px;
-
   font-weight: 600;
-
   cursor: pointer;
-
   background: #6366f1;
-
   color: white;
-}
-
-button:hover {
-  opacity: 0.85;
 }
 
 #startBtn {
@@ -112,28 +68,29 @@ button:hover {
 
 video {
   width: 100%;
-
   max-height: 70vh;
-
   background: black;
-
   border-radius: 12px;
-
   margin-top: 1rem;
 }
 
 .status {
   color: #94a3b8;
-
-  font-size: 0.9rem;
-
-  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
 }
 
+.debug {
+  white-space: pre-wrap;
+  font-family: monospace;
+  background: #020617;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-top: 1rem;
+  color: #cbd5e1;
+}
 </style>
-
 </head>
-
 
 <body>
 
@@ -144,70 +101,46 @@ video {
     <strong id="roomLabel"></strong>
   </div>
 
-
   <div class="link-box">
-
-    <input
-      id="shareLink"
-      readonly
-    >
-
-    <button onclick="copyLink()">
-      Copiar link
-    </button>
-
+    <input id="shareLink" readonly>
+    <button onclick="copyLink()">Copiar link</button>
   </div>
 
-
   <div>
-
-    <button
-      id="startBtn"
-      onclick="startShare()"
-    >
+    <button id="startBtn" onclick="startShare()">
       Iniciar transmissão
     </button>
 
-
-    <button
-      id="stopBtn"
-      onclick="stopShare()"
-      style="display:none"
-    >
+    <button id="stopBtn"
+            onclick="stopShare()"
+            style="display:none">
       Parar
     </button>
-
   </div>
 
 </div>
-
 
 <video
   id="preview"
   autoplay
   muted
-  playsinline
-></video>
+  playsinline>
+</video>
 
-
-<p
-  class="status"
-  id="status"
->
-  Conectando ao servidor...
+<p class="status" id="status">
+  Clique em "Iniciar transmissão".
 </p>
 
-
-<p
-  class="status"
-  id="viewerCount"
->
+<p class="status" id="viewerCount">
   Espectadores conectados: 0
 </p>
 
+<div class="debug" id="debug">
+Aguardando...
+</div>
+
 
 <script src="/socket.io/socket.io.js"></script>
-
 
 <script>
 
@@ -215,237 +148,167 @@ const params =
   new URLSearchParams(window.location.search);
 
 const room =
-  params.get('room') || 'sala-padrao';
+  params.get("room") || "sala-padrao";
 
+document.getElementById("roomLabel").textContent =
+  room;
 
-document
-  .getElementById('roomLabel')
-  .textContent = room;
-
-
-/*
-Gera o link mantendo o domínio atual.
-*/
 
 const viewerUrl =
-  new URL(
-    `viewer.html?room=${encodeURIComponent(room)}`,
-    window.location.href
-  ).href;
+  `${window.location.origin}/viewer.html?room=${encodeURIComponent(room)}`;
+
+document.getElementById("shareLink").value =
+  viewerUrl;
 
 
-document
-  .getElementById('shareLink')
-  .value = viewerUrl;
+function copyLink() {
 
+  navigator.clipboard.writeText(viewerUrl);
 
-/*
-Socket.IO
-*/
+  document.getElementById("status").textContent =
+    "Link copiado!";
+
+}
+
 
 const socket = io({
-  transports: ['websocket', 'polling'],
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000
+  transports: ["websocket", "polling"]
 });
 
 
-socket.on('connect', () => {
-
-  console.log(
-    '[SOCKET] Conectado:',
-    socket.id
-  );
-
-  if (localStream) {
-
-    socket.emit(
-      'broadcaster',
-      room
-    );
-
-  } else {
-
-    setStatus(
-      'Conectado ao servidor. Pronto para transmitir.'
-    );
-
-  }
-
-});
-
-
-socket.on('disconnect', () => {
-
-  setStatus(
-    'Conexão com o servidor perdida. Tentando reconectar...'
-  );
-
-});
-
-
-socket.on('connect_error', (error) => {
-
-  console.error(
-    '[SOCKET] Erro:',
-    error
-  );
-
-  setStatus(
-    'Não foi possível conectar ao servidor.'
-  );
-
-});
-
-
-const peers = new Map();
+const peers = {};
 
 let localStream = null;
 
 let iceServersCache = null;
 
 
-/*
-STATUS
-*/
+function debug(message) {
+
+  console.log("[BROADCASTER]", message);
+
+  const el =
+    document.getElementById("debug");
+
+  el.textContent +=
+    "\n" + message;
+}
+
 
 function setStatus(message) {
 
-  document
-    .getElementById('status')
-    .textContent = message;
+  document.getElementById("status").textContent =
+    message;
 
 }
 
 
 /*
-TURN
+============================================================
+OBTER TURN DO SERVIDOR
+============================================================
 */
 
 async function getIceServers() {
 
-  const fallback = [
-    {
-      urls:
-        'stun:stun.l.google.com:19302'
-    },
-    {
-      urls:
-        'stun:stun1.l.google.com:19302'
-    }
-  ];
+  debug("Buscando credenciais TURN...");
 
-  try {
+  const response =
+    await fetch("/api/turn-credentials");
 
-    const response =
-      await fetch('/api/turn-credentials');
+  if (!response.ok) {
 
-    if (!response.ok) {
-
-      throw new Error(
-        `HTTP ${response.status}`
-      );
-
-    }
-
-    const servers =
-      await response.json();
-
-    console.log(
-      '[ICE] Servidores recebidos:',
-      servers
+    throw new Error(
+      `Servidor TURN respondeu HTTP ${response.status}`
     );
-
-    return [
-      ...fallback,
-      ...servers
-    ];
-
-  } catch (error) {
-
-    console.warn(
-      '[ICE] TURN indisponível. Usando STUN.',
-      error
-    );
-
-    return fallback;
 
   }
 
+  const servers =
+    await response.json();
+
+  debug(
+    "TURN recebido: " +
+    JSON.stringify(servers)
+  );
+
+  return servers;
 }
 
 
 /*
-Pré-carrega servidores ICE.
+============================================================
+INICIALIZAÇÃO TURN
+============================================================
 */
 
-getIceServers()
-  .then(servers => {
+async function initializeIceServers() {
 
-    iceServersCache = servers;
+  if (!iceServersCache) {
 
-  });
-
-
-/*
-COPIAR LINK
-*/
-
-async function copyLink() {
-
-  try {
-
-    await navigator.clipboard.writeText(
-      viewerUrl
-    );
-
-    setStatus(
-      'Link copiado! Envie para quem for assistir.'
-    );
-
-  } catch (error) {
-
-    console.error(error);
-
-    const input =
-      document.getElementById('shareLink');
-
-    input.select();
-
-    document.execCommand('copy');
-
-    setStatus('Link copiado.');
+    iceServersCache =
+      await getIceServers();
 
   }
 
+  return iceServersCache;
 }
 
 
 /*
+============================================================
+SOCKET
+============================================================
+*/
+
+socket.on("connect", () => {
+
+  debug(
+    "Socket.IO conectado: " +
+    socket.id
+  );
+
+  if (localStream) {
+
+    socket.emit(
+      "broadcaster",
+      room
+    );
+
+  }
+
+});
+
+
+socket.on("connect_error", (error) => {
+
+  debug(
+    "Socket.IO erro: " +
+    error.message
+  );
+
+});
+
+
+/*
+============================================================
 INICIAR TRANSMISSÃO
+============================================================
 */
 
 async function startShare() {
 
-  if (
-    !socket.connected
-  ) {
+  try {
 
     setStatus(
-      'Aguardando conexão com o servidor...'
+      "Solicitando captura da tela..."
     );
 
-    return;
-
-  }
-
-
-  try {
+    await initializeIceServers();
 
     localStream =
       await navigator.mediaDevices.getDisplayMedia({
+
         video: {
           frameRate: {
             ideal: 30,
@@ -454,79 +317,373 @@ async function startShare() {
         },
 
         audio: true
+
       });
+
+
+    document.getElementById("preview").srcObject =
+      localStream;
+
+
+    document.getElementById("startBtn")
+      .style.display = "none";
+
+    document.getElementById("stopBtn")
+      .style.display = "inline-block";
+
+
+    setStatus(
+      "Transmitindo. Compartilhe o link."
+    );
+
+
+    const videoTrack =
+      localStream.getVideoTracks()[0];
+
+    if (videoTrack) {
+
+      videoTrack.addEventListener(
+        "ended",
+        stopShare
+      );
+
+    }
+
+
+    socket.emit(
+      "broadcaster",
+      room
+    );
+
+
+    debug(
+      "Broadcaster registrado na sala " +
+      room
+    );
 
 
   } catch (error) {
 
-    console.error(
-      '[MEDIA]',
-      error
+    console.error(error);
+
+    debug(
+      "Erro ao iniciar: " +
+      error.message
     );
 
     setStatus(
-      `Não foi possível capturar a tela: ${error.message}`
-    );
-
-    return;
-
-  }
-
-
-  document
-    .getElementById('preview')
-    .srcObject = localStream;
-
-
-  document
-    .getElementById('startBtn')
-    .style.display = 'none';
-
-
-  document
-    .getElementById('stopBtn')
-    .style.display = 'inline-block';
-
-
-  setStatus(
-    'Transmitindo... Compartilhe o link com os espectadores.'
-  );
-
-
-  const videoTrack =
-    localStream.getVideoTracks()[0];
-
-
-  if (videoTrack) {
-
-    videoTrack.addEventListener(
-      'ended',
-      stopShare,
-      { once: true }
+      "Erro: " + error.message
     );
 
   }
-
-
-  socket.emit(
-    'broadcaster',
-    room
-  );
 
 }
 
 
 /*
-PARAR TRANSMISSÃO
+============================================================
+NOVO ESPECTADOR
+============================================================
+*/
+
+socket.on("watcher", async (watcherId) => {
+
+  debug(
+    "Novo watcher: " +
+    watcherId
+  );
+
+  if (!localStream) {
+
+    debug(
+      "Watcher ignorado: não há stream."
+    );
+
+    return;
+  }
+
+
+  try {
+
+    const iceServers =
+      await initializeIceServers();
+
+
+    const pc =
+      new RTCPeerConnection({
+        iceServers,
+        iceTransportPolicy: "all"
+      });
+
+
+    peers[watcherId] = pc;
+
+
+    updateViewerCount();
+
+
+    /*
+      Adiciona as tracks da tela.
+    */
+
+    localStream.getTracks().forEach(
+      track => {
+
+        pc.addTrack(
+          track,
+          localStream
+        );
+
+      }
+    );
+
+
+    /*
+      ICE candidates.
+    */
+
+    pc.onicecandidate = event => {
+
+      if (event.candidate) {
+
+        socket.emit(
+          "candidate",
+          watcherId,
+          event.candidate
+        );
+
+      }
+
+    };
+
+
+    /*
+      Estado ICE.
+    */
+
+    pc.oniceconnectionstatechange = () => {
+
+      debug(
+        `Watcher ${watcherId} ICE: ` +
+        pc.iceConnectionState
+      );
+
+    };
+
+
+    pc.onconnectionstatechange = () => {
+
+      debug(
+        `Watcher ${watcherId} connection: ` +
+        pc.connectionState
+      );
+
+    };
+
+
+    /*
+      Cria OFFER.
+    */
+
+    const offer =
+      await pc.createOffer();
+
+
+    await pc.setLocalDescription(
+      offer
+    );
+
+
+    debug(
+      "Offer criada para " +
+      watcherId
+    );
+
+
+    socket.emit(
+      "offer",
+      watcherId,
+      pc.localDescription
+    );
+
+
+  } catch (error) {
+
+    console.error(error);
+
+    debug(
+      "Erro criando peer: " +
+      error.message
+    );
+
+  }
+
+});
+
+
+/*
+============================================================
+ANSWER
+============================================================
+*/
+
+socket.on(
+  "answer",
+  async (watcherId, answer) => {
+
+    const pc =
+      peers[watcherId];
+
+    if (!pc) {
+
+      debug(
+        "Answer recebida sem PeerConnection."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      await pc.setRemoteDescription(
+        new RTCSessionDescription(answer)
+      );
+
+      debug(
+        "Remote description definida: " +
+        watcherId
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+      debug(
+        "Erro setRemoteDescription(answer): " +
+        error.message
+      );
+
+    }
+
+  }
+);
+
+
+/*
+============================================================
+CANDIDATE
+============================================================
+*/
+
+socket.on(
+  "candidate",
+  async (watcherId, candidate) => {
+
+    const pc =
+      peers[watcherId];
+
+    if (!pc) {
+
+      debug(
+        "Candidate sem PeerConnection."
+      );
+
+      return;
+    }
+
+
+    try {
+
+      /*
+        IMPORTANTE:
+        Só adiciona candidate depois
+        da remoteDescription.
+      */
+
+      if (!pc.remoteDescription) {
+
+        debug(
+          "Candidate recebido antes da remoteDescription."
+        );
+
+        return;
+      }
+
+
+      await pc.addIceCandidate(
+        new RTCIceCandidate(candidate)
+      );
+
+
+    } catch (error) {
+
+      console.error(error);
+
+      debug(
+        "Erro addIceCandidate: " +
+        error.message
+      );
+
+    }
+
+  }
+);
+
+
+/*
+============================================================
+WATCHER DESCONECTOU
+============================================================
+*/
+
+socket.on(
+  "disconnectPeer",
+  watcherId => {
+
+    const pc =
+      peers[watcherId];
+
+    if (pc) {
+
+      pc.close();
+
+      delete peers[watcherId];
+
+    }
+
+    updateViewerCount();
+
+  }
+);
+
+
+/*
+============================================================
+BROADCASTER SUBSTITUÍDO
+============================================================
+*/
+
+socket.on(
+  "broadcaster-replaced",
+  () => {
+
+    setStatus(
+      "Esta sala já possui outro transmissor."
+    );
+
+  }
+);
+
+
+/*
+============================================================
+PARAR
+============================================================
 */
 
 function stopShare() {
-
-  socket.emit(
-    'broadcaster-stop',
-    room
-  );
-
 
   if (localStream) {
 
@@ -539,37 +696,30 @@ function stopShare() {
   }
 
 
-  for (
-    const [watcherId, pc]
-    of peers
-  ) {
+  Object.values(peers)
+    .forEach(pc => pc.close());
 
-    pc.close();
 
-    peers.delete(
-      watcherId
-    );
+  for (const id in peers) {
+
+    delete peers[id];
 
   }
 
 
-  document
-    .getElementById('preview')
+  document.getElementById("preview")
     .srcObject = null;
 
 
-  document
-    .getElementById('startBtn')
-    .style.display = 'inline-block';
+  document.getElementById("startBtn")
+    .style.display = "inline-block";
 
-
-  document
-    .getElementById('stopBtn')
-    .style.display = 'none';
+  document.getElementById("stopBtn")
+    .style.display = "none";
 
 
   setStatus(
-    'Transmissão parada.'
+    "Transmissão parada."
   );
 
 
@@ -579,349 +729,20 @@ function stopShare() {
 
 
 /*
-NOVO WATCHER
-*/
-
-socket.on(
-  'watcher',
-  async (watcherId) => {
-
-    if (!localStream) {
-
-      console.warn(
-        '[WATCHER] Ignorado: não existe transmissão ativa.'
-      );
-
-      return;
-
-    }
-
-
-    /*
-    Evita criar duas conexões
-    para o mesmo espectador.
-    */
-
-    if (peers.has(watcherId)) {
-
-      peers
-        .get(watcherId)
-        .close();
-
-      peers.delete(watcherId);
-
-    }
-
-
-    if (!iceServersCache) {
-
-      iceServersCache =
-        await getIceServers();
-
-    }
-
-
-    const pc =
-      new RTCPeerConnection({
-        iceServers: iceServersCache
-      });
-
-
-    peers.set(
-      watcherId,
-      pc
-    );
-
-
-    updateViewerCount();
-
-
-    /*
-    Adiciona tracks da tela.
-    */
-
-    localStream
-      .getTracks()
-      .forEach(track => {
-
-        pc.addTrack(
-          track,
-          localStream
-        );
-
-      });
-
-
-    /*
-    ICE
-    */
-
-    pc.onicecandidate =
-      event => {
-
-        if (event.candidate) {
-
-          socket.emit(
-            'candidate',
-            watcherId,
-            event.candidate
-          );
-
-        }
-
-      };
-
-
-    /*
-    Estado da conexão.
-    */
-
-    pc.onconnectionstatechange =
-      () => {
-
-        console.log(
-          `[PEER ${watcherId}]`,
-          pc.connectionState
-        );
-
-
-        if (
-          pc.connectionState === 'failed' ||
-          pc.connectionState === 'closed'
-        ) {
-
-          if (
-            peers.get(watcherId) === pc
-          ) {
-
-            peers.delete(watcherId);
-
-            updateViewerCount();
-
-          }
-
-        }
-
-      };
-
-
-    try {
-
-      const offer =
-        await pc.createOffer();
-
-
-      await pc.setLocalDescription(
-        offer
-      );
-
-
-      console.log(
-        `[WEBRTC] Enviando offer para ${watcherId}`
-      );
-
-
-      socket.emit(
-        'offer',
-        watcherId,
-        pc.localDescription
-      );
-
-
-    } catch (error) {
-
-      console.error(
-        '[WEBRTC] Erro ao criar offer:',
-        error
-      );
-
-      pc.close();
-
-      peers.delete(watcherId);
-
-      updateViewerCount();
-
-    }
-
-  }
-);
-
-
-/*
-ANSWER
-*/
-
-socket.on(
-  'answer',
-  async (watcherId, answer) => {
-
-    const pc =
-      peers.get(watcherId);
-
-
-    if (!pc) {
-
-      console.warn(
-        '[ANSWER] Peer não encontrado:',
-        watcherId
-      );
-
-      return;
-
-    }
-
-
-    try {
-
-      await pc.setRemoteDescription(
-        new RTCSessionDescription(answer)
-      );
-
-      console.log(
-        `[WEBRTC] Answer recebida de ${watcherId}`
-      );
-
-    } catch (error) {
-
-      console.error(
-        '[ANSWER] Erro:',
-        error
-      );
-
-    }
-
-  }
-);
-
-
-/*
-ICE CANDIDATE
-
-Se chegar antes da RemoteDescription,
-fica guardado em uma fila.
-*/
-
-const pendingCandidates =
-  new Map();
-
-
-socket.on(
-  'candidate',
-  async (watcherId, candidate) => {
-
-    const pc =
-      peers.get(watcherId);
-
-
-    if (!pc) return;
-
-
-    try {
-
-      if (!pc.remoteDescription) {
-
-        if (
-          !pendingCandidates.has(watcherId)
-        ) {
-
-          pendingCandidates.set(
-            watcherId,
-            []
-          );
-
-        }
-
-
-        pendingCandidates
-          .get(watcherId)
-          .push(candidate);
-
-
-        return;
-
-      }
-
-
-      await pc.addIceCandidate(
-        new RTCIceCandidate(candidate)
-      );
-
-    } catch (error) {
-
-      console.warn(
-        '[ICE] Erro ao adicionar candidate:',
-        error
-      );
-
-    }
-
-  }
-);
-
-
-/*
-DESCONECTAR WATCHER
-*/
-
-socket.on(
-  'disconnectPeer',
-  watcherId => {
-
-    const pc =
-      peers.get(watcherId);
-
-
-    if (pc) {
-
-      pc.close();
-
-      peers.delete(watcherId);
-
-      pendingCandidates.delete(
-        watcherId
-      );
-
-      updateViewerCount();
-
-    }
-
-  }
-);
-
-
-/*
+============================================================
 CONTADOR
+============================================================
 */
 
 function updateViewerCount() {
 
-  document
-    .getElementById('viewerCount')
+  document.getElementById("viewerCount")
     .textContent =
-      `Espectadores conectados: ${peers.size}`;
+    `Espectadores conectados: ${
+      Object.keys(peers).length
+    }`;
 
 }
-
-
-/*
-ANTES DE FECHAR A PÁGINA
-*/
-
-window.addEventListener(
-  'beforeunload',
-  () => {
-
-    if (localStream) {
-
-      socket.emit(
-        'broadcaster-stop',
-        room
-      );
-
-    }
-
-  }
-);
 
 </script>
 
