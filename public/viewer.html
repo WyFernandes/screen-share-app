@@ -1,839 +1,159 @@
 <!DOCTYPE html>
 <html lang="pt-br">
-
 <head>
-
 <meta charset="UTF-8">
-
-<meta
-  name="viewport"
-  content="width=device-width, initial-scale=1.0">
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Assistindo Transmissão</title>
-
 <style>
-
-body {
-
-  font-family:
-    -apple-system,
-    Segoe UI,
-    Roboto,
-    Arial,
-    sans-serif;
-
-  background: #0f172a;
-
-  color: #f1f5f9;
-
-  margin: 0;
-
-  padding: 1.5rem;
-
-  display: flex;
-
-  flex-direction: column;
-
-  align-items: center;
-
-}
-
-
-.badge {
-
-  background: #1e293b;
-
-  padding: 0.5rem 1rem;
-
-  border-radius: 8px;
-
-  margin-bottom: 1rem;
-
-}
-
-
-video {
-
-  width: 100%;
-
-  max-width: 1100px;
-
-  max-height: 80vh;
-
-  background: black;
-
-  border-radius: 12px;
-
-}
-
-
-.status {
-
-  color: #94a3b8;
-
-  font-size: 0.9rem;
-
-  margin-top: 1rem;
-
-  text-align: center;
-
-}
-
-
-button {
-
-  margin-top: 0.75rem;
-
-  padding: 0.6rem 1.2rem;
-
-  border: none;
-
-  border-radius: 8px;
-
-  background: #6366f1;
-
-  color: white;
-
-  font-weight: 600;
-
-  cursor: pointer;
-
-}
-
-
-.debug {
-
-  width: 100%;
-
-  max-width: 1100px;
-
-  box-sizing: border-box;
-
-  white-space: pre-wrap;
-
-  font-family: monospace;
-
-  background: #020617;
-
-  padding: 1rem;
-
-  border-radius: 8px;
-
-  margin-top: 1rem;
-
-  color: #cbd5e1;
-
-}
-
+  body {
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: #0f172a;
+    color: #f1f5f9;
+    margin: 0;
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .badge {
+    background: #1e293b;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+  }
+  video {
+    width: 100%;
+    max-width: 1100px;
+    max-height: 80vh;
+    background: black;
+    border-radius: 12px;
+  }
+  .status {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-top: 1rem;
+    text-align: center;
+  }
 </style>
-
 </head>
-
-
 <body>
-
-
-<div class="badge">
-
-  Sala:
-
-  <strong id="roomLabel"></strong>
-
-</div>
-
-
-<video
-  id="remoteVideo"
-  autoplay
-  playsinline
-  controls
-  muted>
-</video>
-
-
-<button
-  id="unmuteBtn"
-  style="display:none">
-
-  🔊 Ativar som
-
-</button>
-
-
-<p
-  class="status"
-  id="status">
-
-  Conectando à transmissão...
-
-</p>
-
-
-<div
-  class="debug"
-  id="debug">
-
-Iniciando...
-
-</div>
-
+  <div class="badge">Sala: <strong id="roomLabel"></strong></div>
+  <video id="remoteVideo" autoplay playsinline controls muted></video>
+  <button id="unmuteBtn" style="display:none; margin-top:0.75rem; padding:0.6rem 1.2rem; border:none; border-radius:8px; background:#6366f1; color:white; font-weight:600; cursor:pointer;">🔊 Ativar som</button>
+  <p class="status" id="status">Conectando à transmissão...</p>
 
 <script src="/socket.io/socket.io.js"></script>
-
-
 <script>
+const params = new URLSearchParams(window.location.search);
+const room = params.get('room') || 'sala-padrao';
+document.getElementById('roomLabel').textContent = room;
 
-const params =
-  new URLSearchParams(
-    window.location.search
-  );
-
-
-const room =
-  params.get("room") || "sala-padrao";
-
-
-document.getElementById(
-  "roomLabel"
-).textContent = room;
-
-
-const socket = io({
-  transports: [
-    "websocket",
-    "polling"
-  ]
-});
-
-
+const socket = io();
 let pc = null;
 
-let broadcasterId = null;
+const TURN_CREDENTIALS_URL = 'https://makai.metered.live/api/v1/turn/credentials?apiKey=99c47214cf6419413ff65c63367cec0ba7d5';
+
+async function getIceServers() {
+  const fallback = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' }
+  ];
+  if (!TURN_CREDENTIALS_URL || TURN_CREDENTIALS_URL === 'COLE_AQUI_SUA_URL_DO_METERED') {
+    return fallback;
+  }
+  try {
+    const res = await fetch(TURN_CREDENTIALS_URL);
+    const iceServers = await res.json();
+    return iceServers;
+  } catch (err) {
+    console.warn('Não foi possível buscar credenciais TURN, usando apenas STUN:', err);
+    return fallback;
+  }
+}
 
 let iceServersCache = null;
+getIceServers().then((servers) => { iceServersCache = servers; });
 
-let pendingCandidates = [];
-
-let retryTimer = null;
-
-
-function debug(message) {
-
-  console.log("[VIEWER]", message);
-
-  const el =
-    document.getElementById("debug");
-
-  el.textContent +=
-    "\n" + message;
-
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
 }
 
-
-function setStatus(message) {
-
-  document.getElementById(
-    "status"
-  ).textContent = message;
-
-}
-
-
-/*
-============================================================
-TURN
-============================================================
-*/
-async function getIceServers() {
-  try {
-    const response = await fetch('/api/turn-credentials');
-
-    if (!response.ok) {
-      throw new Error(
-        `Servidor TURN respondeu HTTP ${response.status}`
-      );
-    }
-
-    const iceServers = await response.json();
-
-    console.log('ICE servers recebidos:', iceServers);
-
-    return iceServers;
-
-  } catch (error) {
-
-    console.error(
-      'Erro ao obter servidores TURN:',
-      error
-    );
-
-    // STUN de fallback
-    return [
-      {
-        urls: 'stun:stun.l.google.com:19302'
-      }
-    ];
-  }
-}
-
-
-/*
-============================================================
-SOCKET
-============================================================
-*/
-
-socket.on("connect", () => {
-
-  debug(
-    "Socket conectado: " +
-    socket.id
-  );
-
-  requestWatcher();
-
+document.getElementById('unmuteBtn').addEventListener('click', () => {
+  const videoEl = document.getElementById('remoteVideo');
+  videoEl.muted = false;
+  videoEl.play().catch(() => {});
+  document.getElementById('unmuteBtn').style.display = 'none';
 });
 
+socket.emit('watcher', room);
 
-socket.on(
-  "connect_error",
-  error => {
-
-    debug(
-      "Socket error: " +
-      error.message
-    );
-
+socket.on('no-broadcaster', () => {
+  setStatus('Nenhuma transmissão ativa nesta sala ainda. Aguardando o transmissor iniciar...');
+  if (!window._watcherRetryInterval) {
+    window._watcherRetryInterval = setInterval(() => {
+      if (!pc) socket.emit('watcher', room);
+    }, 3000);
   }
-);
+});
 
+socket.on('broadcaster-ready', () => {
+  if (!pc) socket.emit('watcher', room);
+});
 
-/*
-============================================================
-WATCHER
-============================================================
-*/
-
-function requestWatcher() {
-
-  debug(
-    "Solicitando transmissão da sala " +
-    room
-  );
-
-  socket.emit(
-    "watcher",
-    room
-  );
-
-}
-
-
-socket.on(
-  "no-broadcaster",
-  () => {
-
-    setStatus(
-      "Nenhuma transmissão ativa. Aguardando..."
-    );
-
-    debug(
-      "Nenhum broadcaster encontrado."
-    );
-
-
-    if (!retryTimer) {
-
-      retryTimer =
-        setInterval(() => {
-
-          if (!pc) {
-
-            requestWatcher();
-
-          }
-
-        }, 3000);
-
-    }
-
+socket.on('offer', async (broadcasterId, offer) => {
+  if (window._watcherRetryInterval) {
+    clearInterval(window._watcherRetryInterval);
+    window._watcherRetryInterval = null;
   }
-);
-
-
-socket.on(
-  "broadcaster-ready",
-  () => {
-
-    debug(
-      "Broadcaster disponível."
-    );
-
-
-    if (!pc) {
-
-      requestWatcher();
-
-    }
-
+  if (!iceServersCache) {
+    iceServersCache = await getIceServers();
   }
-);
+  pc = new RTCPeerConnection({ iceServers: iceServersCache });
 
+  pc.ontrack = (event) => {
+    const videoEl = document.getElementById('remoteVideo');
+    videoEl.srcObject = event.streams[0];
+    videoEl.play().catch((err) => {
+      console.warn('Autoplay bloqueado, aguardando interação do usuário:', err);
+    });
+    setStatus('Conectado! Assistindo em tempo real (som desligado).');
+    document.getElementById('unmuteBtn').style.display = 'inline-block';
+  };
 
-/*
-============================================================
-OFFER
-============================================================
-*/
-
-socket.on(
-  "offer",
-  async (senderId, offer) => {
-
-    debug(
-      "Offer recebida de " +
-      senderId
-    );
-
-
-    broadcasterId =
-      senderId;
-
-
-    if (retryTimer) {
-
-      clearInterval(
-        retryTimer
-      );
-
-      retryTimer = null;
-
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('candidate', broadcasterId, event.candidate);
     }
-
-
-    try {
-
-      const iceServers =
-        await initializeIceServers();
-
-
-      /*
-        Se já existia uma conexão,
-        fecha antes de criar outra.
-      */
-
-      if (pc) {
-
-        pc.close();
-
-        pc = null;
-
-      }
-
-
-      pc =
-        new RTCPeerConnection({
-
-          iceServers,
-
-          iceTransportPolicy: "all"
-
-        });
-
-
-      /*
-        ======================================================
-        TRACK
-        ======================================================
-      */
-
-      pc.ontrack = event => {
-
-        debug(
-          "Track recebida."
-        );
-
-
-        const video =
-          document.getElementById(
-            "remoteVideo"
-          );
-
-
-        if (event.streams &&
-            event.streams[0]) {
-
-          video.srcObject =
-            event.streams[0];
-
-        }
-
-
-        video.play()
-          .then(() => {
-
-            setStatus(
-              "Conectado! Transmissão recebida."
-            );
-
-          })
-          .catch(error => {
-
-            debug(
-              "Autoplay bloqueado: " +
-              error.message
-            );
-
-            setStatus(
-              "Transmissão conectada. Clique no vídeo para reproduzir."
-            );
-
-          });
-
-      };
-
-
-      /*
-        ======================================================
-        ICE LOCAL
-        ======================================================
-      */
-
-      pc.onicecandidate =
-        event => {
-
-          if (event.candidate) {
-
-            debug(
-              "Enviando ICE candidate."
-            );
-
-
-            socket.emit(
-              "candidate",
-              broadcasterId,
-              event.candidate
-            );
-
-          }
-
-        };
-
-
-      /*
-        ======================================================
-        ICE STATE
-        ======================================================
-      */
-
-      pc.oniceconnectionstatechange =
-        () => {
-
-          const state =
-            pc.iceConnectionState;
-
-
-          debug(
-            "ICE state: " + state
-          );
-
-
-          if (state === "checking") {
-
-            setStatus(
-              "Estabelecendo conexão WebRTC..."
-            );
-
-          }
-
-
-          if (
-            state === "connected" ||
-            state === "completed"
-          ) {
-
-            setStatus(
-              "Conectado! Assistindo em tempo real."
-            );
-
-          }
-
-
-          if (state === "failed") {
-
-            setStatus(
-              "Falha na conexão WebRTC. Verifique o TURN."
-            );
-
-          }
-
-
-          if (state === "disconnected") {
-
-            setStatus(
-              "Conexão WebRTC interrompida."
-            );
-
-          }
-
-        };
-
-
-      /*
-        ======================================================
-        CONNECTION STATE
-        ======================================================
-      */
-
-      pc.onconnectionstatechange =
-        () => {
-
-          debug(
-            "Connection state: " +
-            pc.connectionState
-          );
-
-        };
-
-
-      /*
-        ======================================================
-        REMOTE DESCRIPTION
-        ======================================================
-      */
-
-      await pc.setRemoteDescription(
-        new RTCSessionDescription(
-          offer
-        )
-      );
-
-
-      debug(
-        "Remote description configurada."
-      );
-
-
-      /*
-        Agora podemos aplicar os candidates
-        que chegaram antes.
-      */
-
-      for (
-        const candidate
-        of pendingCandidates
-      ) {
-
-        try {
-
-          await pc.addIceCandidate(
-            new RTCIceCandidate(
-              candidate
-            )
-          );
-
-        } catch (error) {
-
-          debug(
-            "Erro candidate pendente: " +
-            error.message
-          );
-
-        }
-
-      }
-
-
-      pendingCandidates = [];
-
-
-      /*
-        ======================================================
-        ANSWER
-        ======================================================
-      */
-
-      const answer =
-        await pc.createAnswer();
-
-
-      await pc.setLocalDescription(
-        answer
-      );
-
-
-      debug(
-        "Answer criada."
-      );
-
-
-      socket.emit(
-        "answer",
-        broadcasterId,
-        pc.localDescription
-      );
-
-
-    } catch (error) {
-
-      console.error(error);
-
-
-      debug(
-        "ERRO WebRTC: " +
-        error.message
-      );
-
-
-      setStatus(
-        "Erro WebRTC: " +
-        error.message
-      );
-
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    if (pc.iceConnectionState === 'checking') {
+      setStatus('Estabelecendo conexão...');
+    } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      setStatus('Conectado! Assistindo em tempo real (som desligado).');
+    } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+      setStatus('Não foi possível conectar à transmissão. Verifique sua conexão de internet ou tente novamente.');
     }
+  };
 
+  await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  socket.emit('answer', broadcasterId, answer);
+});
+
+socket.on('candidate', async (broadcasterId, candidate) => {
+  if (pc) {
+    try { await pc.addIceCandidate(new RTCIceCandidate(candidate)); } catch (e) {}
   }
-);
+});
 
-
-/*
-============================================================
-ICE REMOTO
-============================================================
-*/
-
-socket.on(
-  "candidate",
-  async (senderId, candidate) => {
-
-    /*
-      Se ainda não temos PeerConnection,
-      guardamos.
-    */
-
-    if (!pc) {
-
-      pendingCandidates.push(
-        candidate
-      );
-
-      debug(
-        "Candidate armazenado: PC ainda não existe."
-      );
-
-      return;
-
-    }
-
-
-    /*
-      Se a remoteDescription ainda não existe,
-      também guardamos.
-    */
-
-    if (!pc.remoteDescription) {
-
-      pendingCandidates.push(
-        candidate
-      );
-
-      debug(
-        "Candidate armazenado: aguardando remoteDescription."
-      );
-
-      return;
-
-    }
-
-
-    try {
-
-      await pc.addIceCandidate(
-        new RTCIceCandidate(
-          candidate
-        )
-      );
-
-
-    } catch (error) {
-
-      console.error(error);
-
-      debug(
-        "Erro addIceCandidate: " +
-        error.message
-      );
-
-    }
-
-  }
-);
-
-
-/*
-============================================================
-BROADCASTER DESCONECTOU
-============================================================
-*/
-
-socket.on(
-  "broadcaster-disconnect",
-  () => {
-
-    setStatus(
-      "O transmissor encerrou a transmissão."
-    );
-
-
-    if (pc) {
-
-      pc.close();
-
-      pc = null;
-
-    }
-
-
-    document.getElementById(
-      "remoteVideo"
-    ).srcObject = null;
-
-
-    pendingCandidates = [];
-
-  }
-);
-
-
-/*
-============================================================
-SOM
-============================================================
-*/
-
-document.getElementById(
-  "unmuteBtn"
-).addEventListener(
-  "click",
-  () => {
-
-    const video =
-      document.getElementById(
-        "remoteVideo"
-      );
-
-
-    video.muted = false;
-
-
-    video.play()
-      .catch(() => {});
-
-  }
-);
-
+socket.on('broadcaster-disconnect', () => {
+  setStatus('O transmissor encerrou a transmissão.');
+  if (pc) { pc.close(); pc = null; }
+  document.getElementById('remoteVideo').srcObject = null;
+});
 </script>
-
 </body>
-
 </html>
