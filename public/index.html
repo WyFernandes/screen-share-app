@@ -1,60 +1,309 @@
-<script>
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
 
-function getRoom() {
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
 
-  const el =
-    document.getElementById("room");
+  <title>Transmissão de Tela</title>
 
-  let room =
-    el.value.trim();
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
-  if (!room) {
+    body {
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
 
-    room =
-      Math.random()
-        .toString(36)
-        .substring(2, 8);
+      background: #0f172a;
+      color: #f1f5f9;
 
-  }
+      display: flex;
+      align-items: center;
+      justify-content: center;
 
-  room =
-    room.replace(
-      /[^a-zA-Z0-9_-]/g,
-      ""
+      min-height: 100vh;
+
+      margin: 0;
+      padding: 20px;
+    }
+
+    .card {
+      background: #1e293b;
+
+      padding: 2.5rem;
+
+      border-radius: 16px;
+
+      width: 100%;
+      max-width: 420px;
+
+      box-shadow:
+        0 10px 30px
+        rgba(0, 0, 0, 0.4);
+
+      text-align: center;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      margin:
+        0
+        0
+        1.5rem;
+    }
+
+    input {
+      width: 100%;
+
+      padding: 0.75rem;
+
+      border-radius: 8px;
+
+      border:
+        1px solid
+        #334155;
+
+      background: #0f172a;
+
+      color: #f1f5f9;
+
+      margin-bottom: 1rem;
+
+      font-size: 1rem;
+    }
+
+    input:focus {
+      outline: none;
+
+      border-color: #6366f1;
+    }
+
+    button {
+      width: 100%;
+
+      padding: 0.85rem;
+
+      border: none;
+
+      border-radius: 8px;
+
+      font-size: 1rem;
+      font-weight: 600;
+
+      cursor: pointer;
+
+      margin-bottom: 0.75rem;
+
+      transition:
+        opacity 0.2s,
+        transform 0.1s;
+    }
+
+    button:hover {
+      opacity: 0.85;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .primary {
+      background: #6366f1;
+      color: white;
+    }
+
+    .secondary {
+      background: #334155;
+      color: #f1f5f9;
+    }
+
+    .hint {
+      font-size: 0.8rem;
+
+      color: #94a3b8;
+
+      margin:
+        1rem
+        0
+        0;
+    }
+  </style>
+</head>
+
+<body>
+
+  <main class="card">
+
+    <h1>
+      🖥️ Transmissão de Tela
+    </h1>
+
+    <input
+      id="room"
+      type="text"
+      placeholder="Código da sala (ex: reuniao123)"
+      autocomplete="off"
+      maxlength="50"
+    >
+
+    <button
+      type="button"
+      class="primary"
+      id="broadcastBtn"
+    >
+      Transmitir minha tela
+    </button>
+
+    <button
+      type="button"
+      class="secondary"
+      id="watchBtn"
+    >
+      Assistir uma transmissão
+    </button>
+
+    <p class="hint">
+      Digite um código de sala e compartilhe com quem
+      for assistir. Ambos devem usar o mesmo código.
+    </p>
+
+  </main>
+
+
+  <script>
+
+    const roomInput =
+      document.getElementById("room");
+
+    const broadcastBtn =
+      document.getElementById("broadcastBtn");
+
+    const watchBtn =
+      document.getElementById("watchBtn");
+
+
+    function getRoom() {
+
+      let room =
+        roomInput.value.trim();
+
+      /*
+       * Se nenhuma sala for informada,
+       * gera uma sala aleatória.
+       */
+
+      if (!room) {
+
+        room =
+          Math.random()
+            .toString(36)
+            .substring(2, 10);
+
+      }
+
+
+      /*
+       * Permite apenas:
+       *
+       * letras
+       * números
+       * _
+       * -
+       */
+
+      room =
+        room.replace(
+          /[^a-zA-Z0-9_-]/g,
+          ""
+        );
+
+
+      /*
+       * Evita uma sala vazia.
+       */
+
+      if (!room) {
+
+        room = "sala-padrao";
+
+      }
+
+
+      return room;
+
+    }
+
+
+    function goBroadcast() {
+
+      const room =
+        getRoom();
+
+      window.location.href =
+        "broadcaster.html?room=" +
+        encodeURIComponent(room);
+
+    }
+
+
+    function goWatch() {
+
+      const room =
+        getRoom();
+
+      window.location.href =
+        "viewer.html?room=" +
+        encodeURIComponent(room);
+
+    }
+
+
+    /*
+     * Eventos dos botões.
+     */
+
+    broadcastBtn.addEventListener(
+      "click",
+      goBroadcast
     );
 
 
-  if (!room) {
-
-    room = "sala-padrao";
-
-  }
-
-
-  return room;
-
-}
+    watchBtn.addEventListener(
+      "click",
+      goWatch
+    );
 
 
-function goBroadcast() {
+    /*
+     * ENTER no campo:
+     *
+     * inicia como espectador.
+     */
 
-  const room =
-    getRoom();
+    roomInput.addEventListener(
+      "keydown",
+      function (event) {
 
-  window.location.href =
-    `/broadcaster.html?room=${encodeURIComponent(room)}`;
+        if (event.key === "Enter") {
 
-}
+          goWatch();
 
+        }
 
-function goWatch() {
+      }
+    );
 
-  const room =
-    getRoom();
+  </script>
 
-  window.location.href =
-    `/viewer.html?room=${encodeURIComponent(room)}`;
-
-}
-
-</script>
+</body>
+</html>
