@@ -89,9 +89,24 @@ socket.emit('watcher', room);
 
 socket.on('no-broadcaster', () => {
   setStatus('Nenhuma transmissão ativa nesta sala ainda. Aguardando o transmissor iniciar...');
+  // tenta de novo periodicamente, caso o transmissor comece depois
+  if (!window._watcherRetryInterval) {
+    window._watcherRetryInterval = setInterval(() => {
+      if (!pc) socket.emit('watcher', room);
+    }, 3000);
+  }
+});
+
+// avisado quando o transmissor inicia a transmissão nesta sala
+socket.on('broadcaster-ready', () => {
+  if (!pc) socket.emit('watcher', room);
 });
 
 socket.on('offer', async (broadcasterId, offer) => {
+  if (window._watcherRetryInterval) {
+    clearInterval(window._watcherRetryInterval);
+    window._watcherRetryInterval = null;
+  }
   pc = new RTCPeerConnection(rtcConfig);
 
   pc.ontrack = (event) => {
