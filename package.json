@@ -1,7 +1,7 @@
 {
   "name": "screen-share-app",
-  "version": "1.1.0",
-  "description": "Transmissao de tela via WebRTC com Socket.IO e TURN",
+  "version": "1.0.0",
+  "description": "Transmissao de tela via WebRTC com Socket.IO e Metered TURN",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
