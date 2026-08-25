@@ -104,7 +104,22 @@ let localStream = null;
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' }
+    { urls: 'stun:stun1.l.google.com:19302' },
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
   ]
 };
 
@@ -130,7 +145,6 @@ async function startShare() {
   document.getElementById('stopBtn').style.display = 'inline-block';
   document.getElementById('status').textContent = 'Transmitindo... compartilhe o link com os espectadores.';
 
-  // se o usuário parar de compartilhar pelo próprio navegador
   localStream.getVideoTracks()[0].addEventListener('ended', stopShare);
 
   socket.emit('broadcaster', room);
@@ -150,9 +164,8 @@ function stopShare() {
   updateViewerCount();
 }
 
-// Um novo espectador chegou
 socket.on('watcher', async (watcherId) => {
-  if (!localStream) return; // ainda não começou a transmitir
+  if (!localStream) return;
 
   const pc = new RTCPeerConnection(rtcConfig);
   peers[watcherId] = pc;
