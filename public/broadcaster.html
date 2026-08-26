@@ -101,8 +101,8 @@ const socket = io();
 const peers = {}; // watcherId -> RTCPeerConnection
 let localStream = null;
 
-// TROQUE pela sua URL de credenciais do Metered.ca (a mesma usada no viewer.html)
-const TURN_CREDENTIALS_URL = 'https://makai.metered.live/api/v1/turn/credentials?apiKey=99c47214cf6419413ff65c63367cec0ba7d5';
+// Busca as credenciais TURN pelo próprio servidor (chave fica escondida no Render)
+const TURN_CREDENTIALS_URL = '/api/turn-credentials';
 
 async function getIceServers() {
   const fallback = [
@@ -140,8 +140,17 @@ function updateViewerCount() {
 async function startShare() {
   try {
     localStream = await navigator.mediaDevices.getDisplayMedia({
-      video: { frameRate: 30 },
-      audio: true
+      video: {
+        frameRate: 30,
+        displaySurface: 'browser' // sugere ao navegador começar já na aba "Guia do Chrome"
+      },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      },
+      systemAudio: 'exclude', // impede a opção de compartilhar o áudio do sistema inteiro (Chrome/Edge)
+      selfBrowserSurface: 'exclude' // não deixa a pessoa escolher a própria aba de transmissão sem querer
     });
   } catch (err) {
     document.getElementById('status').textContent =
@@ -154,6 +163,7 @@ async function startShare() {
   document.getElementById('stopBtn').style.display = 'inline-block';
   document.getElementById('status').textContent = 'Transmitindo... compartilhe o link com os espectadores.';
 
+  // se o usuário parar de compartilhar pelo próprio navegador
   localStream.getVideoTracks()[0].addEventListener('ended', stopShare);
 
   socket.emit('broadcaster', room);
